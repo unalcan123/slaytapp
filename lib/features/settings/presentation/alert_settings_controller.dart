@@ -21,7 +21,9 @@ class AlertSettingsNotifier extends StateNotifier<AlertSettings> {
   static const _keySlideDuration = 'slide_duration';
   static const _keySlideCategory = 'slide_category';
   static const _keyUserCategories = 'user_categories';
-
+  void touchLastUpdate() {
+    state = state.copyWith(lastUpdate: DateTime.now().millisecondsSinceEpoch);
+  }
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 

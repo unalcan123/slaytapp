@@ -10,6 +10,9 @@ import 'package:flutter_exif_rotation/flutter_exif_rotation.dart';
 
 import '../data/alert_settings.dart';
 import 'alert_settings_controller.dart';
+import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 /// ✅ GÖRSEL İŞLEME YARDIMCISI (TV İÇİN NORMALLEŞTİRME)
 class ImageTvFixer {
@@ -185,7 +188,49 @@ class ImageTvFixer {
 
 class SlideSettingsPage extends ConsumerWidget {
   const SlideSettingsPage({super.key});
+  Box get _webBox => Hive.box('web_user_images');
 
+  String _getEffectiveCategory(String category) {
+    if (category == 'Kullanıcı Foto') return 'user';
+    if (category == 'Genel Resimler') return 'resim';
+    if (category == 'Hadis-i Şerifler') return 'hadis';
+    if (category == 'Dualar') return 'dua';
+    if (category == 'Besmele') return 'besmele';
+    if (category == 'Namaz Bilgileri') return 'namaz';
+    if (category == 'Ramazan') return 'ramazan';
+    return category;
+  }
+
+  String _webKey(String category) {
+    final cat = _getEffectiveCategory(category);
+    return 'userImages_$cat';
+  }
+
+  Future<void> addUserImagesWeb(WidgetRef ref) async {
+    final settings = ref.read(alertSettingsProvider);
+    final category = settings.slideCategory;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: true,
+      withData: true, // ✅ web için bytes şart
+    );
+    if (result == null) return;
+
+    final key = _webKey(category);
+    final List existing = (_webBox.get(key) as List?) ?? [];
+
+    for (final f in result.files) {
+      final bytes = f.bytes;
+      if (bytes == null) continue;
+      existing.add(base64Encode(bytes));
+    }
+
+    await _webBox.put(key, existing);
+
+    // ✅ SlaytWidget yeniden yüklesin diye lastUpdate'ı tetikle (senin provider'ına göre)
+    ref.read(alertSettingsProvider.notifier).touchLastUpdate();
+  }
   static const Map<String, String> defaultCategoryMap = {
     'resim': 'Genel Resimler',
     'hadis': 'Hadis-i Şerifler',
@@ -268,8 +313,17 @@ class SlideSettingsPage extends ConsumerWidget {
                   leading: const Icon(Icons.add_a_photo_outlined),
                   title: const Text('Yeni Fotoğraf Ekle'),
                   subtitle: const Text('Seçilenleri TV formatına uygun ekler'),
-                  onTap: () => _pickUserImageWithCategory(context, ref),
+                  onTap: () async {
+                    if (kIsWeb) {
+                      await addUserImagesWeb(ref); // ✅ artık burada var
+                      if (context.mounted) Navigator.pop(context);
+                    } else {
+                      await _pickUserImageWithCategory(context, ref);
+                      if (context.mounted) Navigator.pop(context);
+                    }
+                  },
                 ),
+
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.auto_fix_high, color: Colors.blue),

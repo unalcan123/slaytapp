@@ -30,6 +30,9 @@ dependencies:
   file_picker: ^8.1.7
   flutter_exif_rotation: ^0.5.1
   flutter_launcher_icons: any
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
 
 file_picker:
   git:

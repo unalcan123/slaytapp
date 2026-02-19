@@ -179,51 +179,89 @@ class _TimesPageState extends ConsumerState<TimesPage> {
             data: (list) {
               if (_today == null) return const Center(child: CircularProgressIndicator(color: Colors.white));
 
-              return Column(
-                children: [
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+              return OrientationBuilder(
+                builder: (context, orientation) {
+                  final isPortrait = orientation == Orientation.portrait;
+
+                  // ALT BAR (aynı kalsın)
+                  Widget bottomBar() {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 8),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [Color(0xCC000000), Colors.transparent],
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _buildPrayerTimesHorizontalStrip(_today!, _currentPrayerName, context),
+                          ),
+                          const SizedBox(width: 10),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                              borderRadius: BorderRadius.circular(30),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: const Icon(Icons.menu, color: Colors.white, size: 20),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // ✅ PORTRAIT: ÜSTTE slayt, altında info panel, en altta vakitler
+                  if (isPortrait) {
+                    return Column(
                       children: [
-                        // SOL: Foto Slayt Alanı
+                        // ÜST SLAYT
                         Expanded(
-                          flex: 75,
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(10, 10, 4, 4),
+                            padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(20),
-                              child: const SlaytWidget(
+                              child: SlaytWidget(
                                 height: double.infinity,
-                                userImages: [], // Parametre eklendi
+                                userImages: const [],
+                                hideOnPortrait: false, // ✅ slayt portrait'te de görünsün
                               ),
                             ),
                           ),
                         ),
-                        
-                        // SAĞ: Şehir Bilgisi, Geri Sayım ve Ay
-                        Expanded(
-                          flex: 25,
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 2, right: 4, bottom: 4),
-                            child: SingleChildScrollView(
+
+                        // ✅ SAĞ ÜSTTEKİ HER ŞEY -> BURAYA TAŞINDI
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Container(
+                              color: const Color(0x22000000),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                               child: Column(
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 2),
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        widget.ilce.ilceAdi.toUpperCase(),
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      widget.ilce.ilceAdi.toUpperCase(),
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ),
-                                  const Divider(color: Colors.white10, height: 2),
-                                  
+                                  const Divider(color: Colors.white10, height: 10),
                                   NextPrayerCountdownWidget(
                                     remaining: _remaining,
                                     nextPrayer: _nextPrayer,
@@ -234,49 +272,72 @@ class _TimesPageState extends ConsumerState<TimesPage> {
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
 
-                  // ALT: Vakitler şeridi ve Ayarlar Butonu
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 8),
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [Color(0xCC000000), Colors.transparent],
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildPrayerTimesHorizontalStrip(_today!, _currentPrayerName, context),
-                        ),
-                        // Menü Butonu (SAĞ ALT KÖŞE)
-                        const SizedBox(width: 10),
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              _scaffoldKey.currentState?.openDrawer();
-                            },
-                            borderRadius: BorderRadius.circular(30),
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white24),
-                              ),
-                              child: const Icon(Icons.menu, color: Colors.white, size: 20),
-                            ),
-                          ),
-                        ),
+                        // ALT BAR
+                        bottomBar(),
                       ],
-                    ),
-                  ),
-                ],
+                    );
+                  }
+
+                  // ✅ LANDSCAPE: senin mevcut layout aynen
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              flex: 75,
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(10, 10, 4, 4),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: const SlaytWidget(
+                                    height: double.infinity,
+                                    userImages: [],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 25,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 2, right: 4, bottom: 4),
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            widget.ilce.ilceAdi.toUpperCase(),
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const Divider(color: Colors.white10, height: 2),
+                                      NextPrayerCountdownWidget(
+                                        remaining: _remaining,
+                                        nextPrayer: _nextPrayer,
+                                        today: _today!,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      bottomBar(),
+                    ],
+                  );
+                },
               );
             },
           ),
@@ -394,7 +455,16 @@ class NextPrayerCountdownWidget extends StatelessWidget {
   final ({String name, DateTime time})? nextPrayer;
   final Vakit today;
 
-  const NextPrayerCountdownWidget({super.key, required this.remaining, required this.nextPrayer, required this.today});
+  /// ✅ portrait için sıkıştırılmış görünüm
+  final bool compact;
+
+  const NextPrayerCountdownWidget({
+    super.key,
+    required this.remaining,
+    required this.nextPrayer,
+    required this.today,
+    this.compact = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -402,13 +472,21 @@ class NextPrayerCountdownWidget extends StatelessWidget {
     final prayerName = nextPrayer?.name ?? '';
     final title = prayerName == 'Güneş' ? 'Güneşin Doğmasına' : '$prayerName Vaktine';
 
+    // ✅ compact ölçüler
+    final titleGap = compact ? 10.0 : 20.0;
+    final countdownFont = compact ? 50.0 : 50.0;
+    final clockFont = compact ? 16.0 : 20.0;
+    final moonHeight = compact ? 48.0 : 65.0;
+    final boxVPad = compact ? 6.0 : 10.0;
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        const LiveClock(), // ✅ Bilgisayar saati burada
+        LiveClock(fontSize: clockFont), // ✅ font parametreli yaptık
         const Divider(color: Colors.white24, height: 1),
 
-        const SizedBox(height: 20),
+        SizedBox(height: titleGap),
+
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -416,13 +494,15 @@ class NextPrayerCountdownWidget extends StatelessWidget {
             style: textTheme.titleMedium?.copyWith(color: Colors.white70),
           ),
         ),
-        const SizedBox(height: 10),
+
+        const SizedBox(height: 6),
+
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
             formatDurationHHMMSS(remaining),
-            style: const TextStyle(
-              fontSize: 80, // Biraz daha büyük saat
+            style: TextStyle(
+              fontSize: countdownFont,
               fontWeight: FontWeight.bold,
               color: Colors.white,
               fontFamily: 'monospace',
@@ -430,17 +510,21 @@ class NextPrayerCountdownWidget extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 5),
+
+        const SizedBox(height: 4),
+
         Image.network(
           today.ayinSekliURL,
-          height: 65, // Biraz daha büyük ay
+          height: moonHeight,
           errorBuilder: (context, error, stackTrace) =>
-              const Icon(Icons.brightness_3, color: Colors.white70, size: 60),
+              Icon(Icons.brightness_3, color: Colors.white70, size: moonHeight),
         ),
-        const SizedBox(height: 5),
+
+        const SizedBox(height: 6),
+
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: boxVPad),
           decoration: BoxDecoration(
             color: const Color(0x4D000000),
             borderRadius: BorderRadius.circular(16),
@@ -453,16 +537,23 @@ class NextPrayerCountdownWidget extends StatelessWidget {
                 child: Text(
                   today.miladiTarihUzun,
                   textAlign: TextAlign.center,
-                  style: textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: compact ? 14 : null,
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
                   today.hicriTarihUzun,
                   textAlign: TextAlign.center,
-                  style: textTheme.titleSmall?.copyWith(color: Colors.white70),
+                  style: textTheme.titleSmall?.copyWith(
+                    color: Colors.white70,
+                    fontSize: compact ? 12 : null,
+                  ),
                 ),
               ),
             ],
@@ -472,8 +563,11 @@ class NextPrayerCountdownWidget extends StatelessWidget {
     );
   }
 }
+
 class LiveClock extends StatefulWidget {
-  const LiveClock({Key? key}) : super(key: key);
+  final double fontSize;
+
+  const LiveClock({Key? key, this.fontSize = 20}) : super(key: key);
 
   @override
   State<LiveClock> createState() => _LiveClockState();
@@ -507,8 +601,8 @@ class _LiveClockState extends State<LiveClock> {
 
     return Text(
       time,
-      style: const TextStyle(
-        fontSize: 20,
+      style: TextStyle(
+        fontSize: widget.fontSize,
         fontWeight: FontWeight.w500,
         color: Colors.white60,
         fontFamily: 'monospace',
@@ -516,3 +610,4 @@ class _LiveClockState extends State<LiveClock> {
     );
   }
 }
+
