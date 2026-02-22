@@ -29,8 +29,13 @@ class TimesPage extends ConsumerStatefulWidget {
 
 class _TimesPageState extends ConsumerState<TimesPage> {
   Timer? _timer;
+
+  List<Vakit>? _list; // ✅ listeyi sakla
   Vakit? _today;
+
   DateTime _now = DateTime.now();
+  DateTime _lastDay = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day); // ✅
+
   ({String name, DateTime time})? _nextPrayer;
   String? _currentPrayerName;
   Duration _remaining = Duration.zero;
@@ -49,29 +54,63 @@ class _TimesPageState extends ConsumerState<TimesPage> {
 
   Future<void> _initData() async {
     final list = await ref.read(timesProvider(widget.ilce.ilceId).future);
-    if (mounted) {
-      final today = _findToday(list, DateTime.now());
-      if (today != null) {
-        setState(() => _today = today);
-        _startTimer();
+    if (!mounted) return;
 
-        final settings = ref.read(alertSettingsProvider);
-        ref.read(notificationServiceProvider).scheduleAlarms(list, settings);
-      }
+    _list = list; // ✅
+
+    final today = _findToday(list, DateTime.now());
+    if (today != null) {
+      setState(() => _today = today);
+
+      _startTimer();
+
+      final settings = ref.read(alertSettingsProvider);
+      ref.read(notificationServiceProvider).scheduleAlarms(list, settings);
     }
   }
 
   void _startTimer() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && _today != null) {
-        setState(() {
-          _now = DateTime.now();
-          _updateCountdown(_today!);
-          _checkAndTriggerAlarm();
-          _checkAndTriggerPreNotification();
-        });
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      if (!mounted || _today == null) return;
+
+      final now = DateTime.now();
+      final dayKey = DateTime(now.year, now.month, now.day);
+
+      // ✅ Gün değişti mi?
+      if (_list != null && dayKey != _lastDay) {
+        final oldMoonUrl = _today?.ayinSekliURL;
+
+        _lastDay = dayKey;
+        final newToday = _findToday(_list!, now);
+
+        if (newToday != null) {
+          setState(() {
+            _today = newToday;
+            _lastTriggeredPrayerName = null;
+            _lastTriggeredPrePrayer.clear();
+            _isCoolingDown = false;
+          });
+          if (oldMoonUrl != null) {
+            await NetworkImage(oldMoonUrl).evict();
+          }
+          await NetworkImage(newToday.ayinSekliURL).evict();
+          // ✅ (Opsiyonel ama tavsiye) yeni gün için alarmları tekrar kur
+          final settings = ref.read(alertSettingsProvider);
+          ref.read(notificationServiceProvider).scheduleAlarms(_list!, settings);
+        } else {
+          // liste yeni günü kapsamıyorsa yeniden çek
+          await _initData();
+          return;
+        }
       }
+
+      setState(() {
+        _now = now;
+        _updateCountdown(_today!);
+        _checkAndTriggerAlarm();
+        _checkAndTriggerPreNotification();
+      });
     });
   }
 
@@ -83,9 +122,11 @@ class _TimesPageState extends ConsumerState<TimesPage> {
   }
 
   void _updateCountdown(Vakit today) {
-    _nextPrayer = nextPrayerOfDay(today, _now);
+    _nextPrayer = nextPrayerFromList(today, _now);
     if (_nextPrayer != null) {
       _remaining = _nextPrayer!.time.difference(_now);
+    } else {
+      _remaining = Duration.zero;
     }
 
     final prayers = [
@@ -147,6 +188,52 @@ class _TimesPageState extends ConsumerState<TimesPage> {
     }
   }
 
+  /// ✅ Asıl fix burada: gün bittiğinde yarının imsakını, yarının Vakit datasından al.
+  ({String name, DateTime time})? nextPrayerFromList(Vakit today, DateTime now) {
+    DateTime parse(String timeStr, DateTime date) {
+      final parts = timeStr.split(':');
+      return DateTime(date.year, date.month, date.day, int.parse(parts[0]), int.parse(parts[1]));
+    }
+
+    final prayers = [
+      (name: 'İmsak', time: parse(today.imsak, now)),
+      (name: 'Güneş', time: parse(today.gunes, now)),
+      (name: 'Öğle', time: parse(today.ogle, now)),
+      (name: 'İkindi', time: parse(today.ikindi, now)),
+      (name: 'Akşam', time: parse(today.aksam, now)),
+      (name: 'Yatsı', time: parse(today.yatsi, now)),
+    ];
+
+    for (final p in prayers) {
+      if (p.time.isAfter(now)) return p;
+    }
+
+    final tomorrow = now.add(const Duration(days: 1));
+    final tomorrowVakit = _list == null ? null : _findToday(_list!, tomorrow);
+
+    final imsakStr = tomorrowVakit?.imsak ?? today.imsak; // fallback
+    return (name: 'İmsak', time: parse(imsakStr, tomorrow));
+  }
+
+  Vakit? _findToday(List<Vakit> list, DateTime now) {
+    try {
+      return list.firstWhere((v) {
+        final parts = v.miladiTarihKisaIso8601.split('.');
+        if (parts.length != 3) return false;
+
+        final d = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        final y = int.tryParse(parts[2]);
+        if (d == null || m == null || y == null) return false;
+
+        final date = DateTime(y, m, d);
+        return date.year == now.year && date.month == now.month && date.day == now.day;
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -177,13 +264,15 @@ class _TimesPageState extends ConsumerState<TimesPage> {
             loading: () => const Center(child: CircularProgressIndicator(color: Colors.white)),
             error: (e, _) => Center(child: Text("Hata: $e", style: const TextStyle(color: Colors.white))),
             data: (list) {
+              // liste yeni geldiyse cache'i güncelle (hot reload / refetch durumları için)
+              _list ??= list;
+
               if (_today == null) return const Center(child: CircularProgressIndicator(color: Colors.white));
 
               return OrientationBuilder(
                 builder: (context, orientation) {
                   final isPortrait = orientation == Orientation.portrait;
 
-                  // ALT BAR (aynı kalsın)
                   Widget bottomBar() {
                     return Container(
                       padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 8),
@@ -221,11 +310,9 @@ class _TimesPageState extends ConsumerState<TimesPage> {
                     );
                   }
 
-                  // ✅ PORTRAIT: ÜSTTE slayt, altında info panel, en altta vakitler
                   if (isPortrait) {
                     return Column(
                       children: [
-                        // ÜST SLAYT
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
@@ -234,13 +321,11 @@ class _TimesPageState extends ConsumerState<TimesPage> {
                               child: SlaytWidget(
                                 height: double.infinity,
                                 userImages: const [],
-                                hideOnPortrait: false, // ✅ slayt portrait'te de görünsün
+                                hideOnPortrait: false,
                               ),
                             ),
                           ),
                         ),
-
-                        // ✅ SAĞ ÜSTTEKİ HER ŞEY -> BURAYA TAŞINDI
                         Padding(
                           padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
                           child: ClipRRect(
@@ -272,14 +357,11 @@ class _TimesPageState extends ConsumerState<TimesPage> {
                             ),
                           ),
                         ),
-
-                        // ALT BAR
                         bottomBar(),
                       ],
                     );
                   }
 
-                  // ✅ LANDSCAPE: senin mevcut layout aynen
                   return Column(
                     children: [
                       Expanded(
@@ -346,23 +428,6 @@ class _TimesPageState extends ConsumerState<TimesPage> {
     );
   }
 
-  Vakit? _findToday(List<Vakit> list, DateTime now) {
-    try {
-      return list.firstWhere((v) {
-        final parts = v.miladiTarihKisaIso8601.split('.');
-        if (parts.length != 3) return false;
-        final d = int.tryParse(parts[0]);
-        final m = int.tryParse(parts[1]);
-        final y = int.tryParse(parts[2]);
-        if (d == null || m == null || y == null) return false;
-        final date = DateTime(y, m, d);
-        return date.year == now.year && date.month == now.month && date.day == now.day;
-      });
-    } catch (_) {
-      return null;
-    }
-  }
-
   Widget _buildPrayerTimesHorizontalStrip(Vakit today, String? currentPrayerName, BuildContext context) {
     final prayerTimes = {
       'İmsak': today.imsak,
@@ -422,28 +487,6 @@ class _TimesPageState extends ConsumerState<TimesPage> {
   }
 }
 
-({String name, DateTime time})? nextPrayerOfDay(Vakit today, DateTime now) {
-  DateTime parsePrayerTime(String timeStr, DateTime date) {
-    final parts = timeStr.split(':');
-    return DateTime(date.year, date.month, date.day, int.parse(parts[0]), int.parse(parts[1]));
-  }
-
-  final prayers = [
-    (name: 'İmsak', time: parsePrayerTime(today.imsak, now)),
-    (name: 'Güneş', time: parsePrayerTime(today.gunes, now)),
-    (name: 'Öğle', time: parsePrayerTime(today.ogle, now)),
-    (name: 'İkindi', time: parsePrayerTime(today.ikindi, now)),
-    (name: 'Akşam', time: parsePrayerTime(today.aksam, now)),
-    (name: 'Yatsı', time: parsePrayerTime(today.yatsi, now)),
-  ];
-
-  for (final prayer in prayers) {
-    if (prayer.time.isAfter(now)) return prayer;
-  }
-
-  return (name: 'İmsak', time: parsePrayerTime(today.imsak, now.add(const Duration(days: 1))));
-}
-
 String formatDurationHHMMSS(Duration d) {
   if (d.isNegative) return '00:00:00';
   String twoDigits(int n) => n.toString().padLeft(2, "0");
@@ -454,8 +497,6 @@ class NextPrayerCountdownWidget extends StatelessWidget {
   final Duration remaining;
   final ({String name, DateTime time})? nextPrayer;
   final Vakit today;
-
-  /// ✅ portrait için sıkıştırılmış görünüm
   final bool compact;
 
   const NextPrayerCountdownWidget({
@@ -472,7 +513,6 @@ class NextPrayerCountdownWidget extends StatelessWidget {
     final prayerName = nextPrayer?.name ?? '';
     final title = prayerName == 'Güneş' ? 'Güneşin Doğmasına' : '$prayerName Vaktine';
 
-    // ✅ compact ölçüler
     final titleGap = compact ? 10.0 : 20.0;
     final countdownFont = compact ? 50.0 : 50.0;
     final clockFont = compact ? 16.0 : 20.0;
@@ -482,11 +522,9 @@ class NextPrayerCountdownWidget extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        LiveClock(fontSize: clockFont), // ✅ font parametreli yaptık
+        LiveClock(fontSize: clockFont),
         const Divider(color: Colors.white24, height: 1),
-
         SizedBox(height: titleGap),
-
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -494,9 +532,7 @@ class NextPrayerCountdownWidget extends StatelessWidget {
             style: textTheme.titleMedium?.copyWith(color: Colors.white70),
           ),
         ),
-
         const SizedBox(height: 6),
-
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -510,18 +546,15 @@ class NextPrayerCountdownWidget extends StatelessWidget {
             ),
           ),
         ),
-
         const SizedBox(height: 4),
-
         Image.network(
           today.ayinSekliURL,
+          key: ValueKey('${today.ayinSekliURL}-${today.miladiTarihKisaIso8601}'),
           height: moonHeight,
           errorBuilder: (context, error, stackTrace) =>
               Icon(Icons.brightness_3, color: Colors.white70, size: moonHeight),
         ),
-
         const SizedBox(height: 6),
-
         Container(
           width: double.infinity,
           padding: EdgeInsets.symmetric(horizontal: 10, vertical: boxVPad),
@@ -610,4 +643,3 @@ class _LiveClockState extends State<LiveClock> {
     );
   }
 }
-
