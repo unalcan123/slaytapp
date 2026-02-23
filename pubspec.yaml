@@ -62,8 +62,3 @@ flutter:
     - assets/resim/dua/
     - assets/resim/namaz/
     - assets/resim/besmele/
-
-  fonts:
-    - family: Hasenat
-      fonts:
-        - asset: assets/fonts/hasenat.ttf
